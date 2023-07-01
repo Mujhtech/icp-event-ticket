@@ -22,7 +22,15 @@ type EventTicket = Record<{
   updatedAt: Opt<nat64>;
 }>;
 
+type TicketSold = Record<{
+  id: string;
+  eventTicketId: string;
+  username: string;
+}>;
+
 const eventTicketStorage = new StableBTreeMap<string, EventTicket>(0, 44, 1024);
+
+const ticketStorage = new StableBTreeMap<string, TicketSold>(0, 44, 1024);
 
 $query;
 export function getAllEventTickets(): Result<Vec<EventTicket>, string> {
@@ -39,7 +47,7 @@ export function getTicketById(id: string): Result<EventTicket, string> {
 }
 
 $update;
-export function deleteUserProfile(id: string): Result<EventTicket, string> {
+export function deleteEventTicket(id: string): Result<EventTicket, string> {
   return match(eventTicketStorage.remove(id), {
     Some: (ticket) => Result.Ok<EventTicket, string>(ticket),
     None: () =>
@@ -47,6 +55,64 @@ export function deleteUserProfile(id: string): Result<EventTicket, string> {
         `couldn't delete ticket with id=${id}. Profile not found.`
       ),
   });
+}
+
+$query;
+export function getTicketSoldById(id: string): Result<TicketSold, string> {
+  return match(ticketStorage.get(id), {
+    Some: (ticket) => Result.Ok<TicketSold, string>(ticket),
+    None: () =>
+      Result.Err<TicketSold, string>(`ticket sold with id=${id} not found`),
+  });
+}
+
+$update;
+export function buyTicket(
+  id: string,
+  username: string
+): Result<TicketSold, string> {
+  const eventTicket = getTicketById(id);
+
+  if (eventTicket.isErr()) {
+    return Result.Err<EventTicket, string>(
+      `Event ticket with id=${id} not found.`
+    );
+  }
+
+  const ticket = eventTicket.unwrap();
+
+  const newTicket = {
+    id: uuidv4(),
+    eventTicketId: ticket.id,
+    username: username,
+  };
+
+  ticketStorage.insert(newTicket.id, newTicket);
+
+  return Result.Ok<TicketSold, string>(newTicket);
+}
+
+$update;
+export function resellTIcket(
+  id: string,
+  username: string
+): Result<TicketSold, string> {
+  const ticket = getTicketSoldById(id);
+
+  if (ticket.isErr()) {
+    return Result.Err<EventTicket, string>(
+      `ticket sold with id=${id} not found.`
+    );
+  }
+
+  const newTicket = {
+    ...ticket.unwrap(),
+    username: username,
+  };
+
+  ticketStorage.insert(newTicket.id, newTicket);
+
+  return Result.Ok<TicketSold, string>(newTicket);
 }
 
 // a workaround to make uuid package work with Azle
