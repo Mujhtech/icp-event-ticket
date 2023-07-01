@@ -28,17 +28,38 @@ type TicketSold = Record<{
   username: string;
 }>;
 
+type EventTicketPayload = Record<{
+  title: string;
+  description: string;
+  price: number;
+}>;
+
 const eventTicketStorage = new StableBTreeMap<string, EventTicket>(0, 44, 1024);
 
-const ticketStorage = new StableBTreeMap<string, TicketSold>(0, 44, 1024);
+const ticketSoldStorage = new StableBTreeMap<string, TicketSold>(0, 44, 1024);
 
 $query;
 export function getAllEventTickets(): Result<Vec<EventTicket>, string> {
   return Result.Ok(eventTicketStorage.values());
 }
 
+$update;
+export function createEventTicket(
+  payload: EventTicketPayload
+): Result<EventTicket, string> {
+  const newTicket: EventTicket = {
+    id: uuidv4(),
+    createdAt: ic.time(),
+    updatedAt: Opt.None,
+    ...payload,
+    totalTicketSold: 0,
+  };
+  eventTicketStorage.insert(newTicket.id, newTicket);
+  return Result.Ok(newTicket);
+}
+
 $query;
-export function getTicketById(id: string): Result<EventTicket, string> {
+export function getEventTicketById(id: string): Result<EventTicket, string> {
   return match(eventTicketStorage.get(id), {
     Some: (ticket) => Result.Ok<EventTicket, string>(ticket),
     None: () =>
@@ -59,7 +80,7 @@ export function deleteEventTicket(id: string): Result<EventTicket, string> {
 
 $query;
 export function getTicketSoldById(id: string): Result<TicketSold, string> {
-  return match(ticketStorage.get(id), {
+  return match(ticketSoldStorage.get(id), {
     Some: (ticket) => Result.Ok<TicketSold, string>(ticket),
     None: () =>
       Result.Err<TicketSold, string>(`ticket sold with id=${id} not found`),
@@ -71,7 +92,7 @@ export function buyTicket(
   id: string,
   username: string
 ): Result<TicketSold, string> {
-  const eventTicket = getTicketById(id);
+  const eventTicket = getEventTicketById(id);
 
   if (eventTicket.isErr()) {
     return Result.Err<EventTicket, string>(
@@ -87,7 +108,15 @@ export function buyTicket(
     username: username,
   };
 
-  ticketStorage.insert(newTicket.id, newTicket);
+  ticketSoldStorage.insert(newTicket.id, newTicket);
+
+  const updateEventTicket = {
+    ...ticket,
+    totalTicketSold: ticket.totalTicketSold + 1,
+    updatedAt: Opt.Some(ic.time()),
+  };
+
+  eventTicketStorage.insert(updateEventTicket.id, updateEventTicket);
 
   return Result.Ok<TicketSold, string>(newTicket);
 }
@@ -110,7 +139,7 @@ export function resellTIcket(
     username: username,
   };
 
-  ticketStorage.insert(newTicket.id, newTicket);
+  ticketSoldStorage.insert(newTicket.id, newTicket);
 
   return Result.Ok<TicketSold, string>(newTicket);
 }
