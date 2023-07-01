@@ -122,7 +122,7 @@ export function buyTicket(
 }
 
 $update;
-export function resellTIcket(
+export function resellTicket(
   id: string,
   username: string
 ): Result<TicketSold, string> {
@@ -142,6 +142,83 @@ export function resellTIcket(
   ticketSoldStorage.insert(newTicket.id, newTicket);
 
   return Result.Ok<TicketSold, string>(newTicket);
+}
+
+$query;
+export function checkTicketAvailability(id: string): Result<boolean, string> {
+  const eventTicket = getEventTicketById(id);
+  
+  if (eventTicket.isErr()) {
+    return Result.Err<boolean, string>(
+      `Event ticket with id=${id} not found.`
+    );
+  }
+  
+  const ticket = eventTicket.unwrap();
+  const availableTickets = ticket.totalTicketSold < ticket.capacity;
+  
+  return Result.Ok<boolean, string>(availableTickets);
+}
+
+$update;
+export function reserveTicket(id: string, username: string): Result<string, string> {
+  const eventTicket = getEventTicketById(id);
+  
+  if (eventTicket.isErr()) {
+    return Result.Err<string, string>(
+      `Event ticket with id=${id} not found.`
+    );
+  }
+  
+  const ticket = eventTicket.unwrap();
+  
+  if (ticket.reservedBy && ticket.reservedBy !== username) {
+    return Result.Err<string, string>(`Ticket is already reserved by another user.`);
+  }
+  
+  const updatedTicket = {
+    ...ticket,
+    reservedBy: username,
+  };
+  
+  eventTicketStorage.insert(updatedTicket.id, updatedTicket);
+  
+  return Result.Ok<string, string>(updatedTicket.id);
+}
+
+$update;
+export function transferTicket(id: string, newOwner: string): Result<string, string> {
+  const ticket = getTicketSoldById(id);
+  
+  if (ticket.isErr()) {
+    return Result.Err<string, string>(
+      `Ticket sold with id=${id} not found.`
+    );
+  }
+  
+  const updatedTicket = {
+    ...ticket.unwrap(),
+    username: newOwner,
+  };
+  
+  ticketSoldStorage.insert(updatedTicket.id, updatedTicket);
+  
+  return Result.Ok<string, string>(updatedTicket.id);
+}
+
+$update;
+export function requestTicketRefund(id: string): Result<string, string> {
+  const ticket = getTicketSoldById(id);
+  
+  if (ticket.isErr()) {
+    return Result.Err<string, string>(
+      `Ticket sold with id=${id} not found.`
+    );
+  }
+  
+  ticketSoldStorage.remove(id);
+  
+  return Result.Ok<string, string>(id);
 }
 
 // a workaround to make uuid package work with Azle
