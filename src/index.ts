@@ -15,6 +15,7 @@ import {
 } from "azle";
 import { v4 as uuidv4 } from "uuid";
 
+//Record to store the details about the ticket
 type EventTicket = Record<{
   id: string;
   title: string;
@@ -37,14 +38,19 @@ type EventTicketPayload = Record<{
   price: number;
 }>;
 
+//variable to store the principal ID of the contract admin
 var eventAdmin : Principal;
 
+//map to store all the tickets created
 const eventTicketStorage = new StableBTreeMap<string, EventTicket>(0, 44, 1024);
 
+//map to store all the sold tickets
 const ticketSoldStorage = new StableBTreeMap<string, TicketSold>(0, 44, 1024);
 
-//
+//tacking the number of event organizers that have been added by the admin
 let organizerCount : nat8 = 0;
+
+//map to store the Principal IDs of the event organizers
 const eventOrganizers = new StableBTreeMap<nat8,Principal>(1,100,1000);
 
 //specify the admin of the contract on deployment
@@ -54,7 +60,7 @@ export function init(admin : string) : void{
 }
 
 
-//check of user is Admin or event organizer
+//check if one is Admin or event organizer
 $query;
 export function isOrganizer( id : string) : boolean{
   const isorganizer = eventOrganizers.values().filter((organizer) => organizer.toString() === id);
@@ -91,16 +97,13 @@ export function deleteOrganizer(id : nat8) : Result<string,string>{
   return Result.Err<string,string>("You dont have permissions to delete an organizer")
 }
 
-
-
-
-
-
+//get all event tickets
 $query;
 export function getAllEventTickets(): Result<Vec<EventTicket>, string> {
   return Result.Ok(eventTicketStorage.values());
 }
 
+//create a ticket by the event organizer ot admin
 $update;
 export function createEventTicket(
   payload: EventTicketPayload
@@ -108,9 +111,8 @@ export function createEventTicket(
 
   const caller = ic.caller().toString();
   if(!isOrganizer(caller)){
-    return Result.Err<EventTicket,string>("Only Event organizers can create tickets");
+    return Result.Err<EventTicket,string>("Only Event organizers or admins can create tickets");
   }
-
 
   const newTicket: EventTicket = {
     id: uuidv4(),
@@ -123,6 +125,7 @@ export function createEventTicket(
   return Result.Ok(newTicket);
 }
 
+//retrieve event tickets by an id
 $query;
 export function getEventTicketById(id: string): Result<EventTicket, string> {
   return match(eventTicketStorage.get(id), {
@@ -180,7 +183,6 @@ export function buyTicket(
   }
 
   const ticket = eventTicket.unwrap();
-
   const newTicket = {
     id: uuidv4(),
     eventTicketId: ticket.id,
