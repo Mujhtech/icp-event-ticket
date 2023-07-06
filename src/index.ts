@@ -53,7 +53,6 @@ let organizerCount : nat8 = 0;
 //map to store the Principal IDs of the event organizers
 const eventOrganizers = new StableBTreeMap<nat8,Principal>(1,100,1000);
 
-
 //specify the admin of the contract on deployment
 $init;
 export function init(admin : string) : void{
@@ -78,6 +77,7 @@ export function isOrganizer( id : string) : boolean{
 $update;
 export function addOrganizer( org : string) : Result<string, string>{
   if(org.length !== 0 && isOrganizer(ic.caller().toString())){
+   
     organizerCount = (organizerCount+1);
     eventOrganizers.insert(organizerCount,Principal.fromText(org));
     return Result.Ok<string,string>("New organizer added successfully");
@@ -98,14 +98,13 @@ export function deleteOrganizer(id : nat8) : Result<string,string>{
   return Result.Err<string,string>("You dont have permissions to delete an organizer")
 }
 
-
 //get all event tickets
 $query;
 export function getAllEventTickets(): Result<Vec<EventTicket>, string> {
   return Result.Ok(eventTicketStorage.values());
 }
 
-//create a ticket by the event organizer ot admin
+//create a ticket by the event organizer or admin
 $update;
 export function createEventTicket(
   payload: EventTicketPayload
@@ -127,7 +126,6 @@ export function createEventTicket(
   return Result.Ok(newTicket);
 }
 
-
 //retrieve event tickets by an id
 $query;
 export function getEventTicketById(id: string): Result<EventTicket, string> {
@@ -137,7 +135,6 @@ export function getEventTicketById(id: string): Result<EventTicket, string> {
       Result.Err<EventTicket, string>(`event ticket with id=${id} not found`),
   });
 }
-
 
 //delete a ticket by the event organizer
 $update;
@@ -156,7 +153,6 @@ export function deleteEventTicket(id: string): Result<EventTicket, string> {
   });
 }
 
-
 //get a sold ticket by its id
 $query;
 export function getTicketSoldById(id: string): Result<TicketSold, string> {
@@ -166,7 +162,6 @@ export function getTicketSoldById(id: string): Result<TicketSold, string> {
       Result.Err<TicketSold, string>(`ticket sold with id=${id} not found`),
   });
 }
-
 
 //buy a ticket
 $update;
@@ -208,7 +203,6 @@ export function buyTicket(
   return Result.Ok<TicketSold, string>(newTicket);
 }
 
-
 //resell a ticket by its owner
 $update;
 export function resellTIcket(
@@ -232,7 +226,6 @@ export function resellTIcket(
 
   return Result.Ok<TicketSold, string>(newTicket);
 }
-
 
 // a workaround to make uuid package work with Azle
 globalThis.crypto = {
