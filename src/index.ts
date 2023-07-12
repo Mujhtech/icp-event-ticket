@@ -9,11 +9,13 @@ import {
   nat64,
   ic,
   Opt,
+  Principal,
 } from "azle";
 import { v4 as uuidv4 } from "uuid";
 
 type EventTicket = Record<{
   id: string;
+  owner: Principal;
   title: string;
   description: string;
   price: number;
@@ -24,6 +26,7 @@ type EventTicket = Record<{
 
 type TicketSold = Record<{
   id: string;
+  owner: Principal;
   eventTicketId: string;
   username: string;
 }>;
@@ -36,19 +39,22 @@ type EventTicketPayload = Record<{
 
 const eventTicketStorage = new StableBTreeMap<string, EventTicket>(0, 44, 1024);
 
-const ticketSoldStorage = new StableBTreeMap<string, TicketSold>(0, 44, 1024);
+const ticketSoldStorage = new StableBTreeMap<string, TicketSold>(1, 44, 1024);
 
+// Function to fetch all EventTickets
 $query;
 export function getAllEventTickets(): Result<Vec<EventTicket>, string> {
   return Result.Ok(eventTicketStorage.values());
 }
 
+// Function to create an EventTicket
 $update;
 export function createEventTicket(
   payload: EventTicketPayload
 ): Result<EventTicket, string> {
   const newTicket: EventTicket = {
     id: uuidv4(),
+    owner: ic.caller(),
     createdAt: ic.time(),
     updatedAt: Opt.None,
     ...payload,
@@ -58,6 +64,7 @@ export function createEventTicket(
   return Result.Ok(newTicket);
 }
 
+// Function to fetch a specific EventTicket with the specified id
 $query;
 export function getEventTicketById(id: string): Result<EventTicket, string> {
   return match(eventTicketStorage.get(id), {
@@ -67,10 +74,20 @@ export function getEventTicketById(id: string): Result<EventTicket, string> {
   });
 }
 
+// Function to delete an EventTicket
+// EventTickets can only be removed by their owners
 $update;
 export function deleteEventTicket(id: string): Result<EventTicket, string> {
-  return match(eventTicketStorage.remove(id), {
-    Some: (ticket) => Result.Ok<EventTicket, string>(ticket),
+  return match(eventTicketStorage.get(id), {
+    Some: (ticket) => {
+      // return an error if caller isn't the EventTicket's owner
+      if (ticket.owner.toString() !== ic.caller().toString()) {
+        return Result.Err<EventTicket, string>("Unauthorized caller");
+      }
+      // remove EventTicket from storage
+      eventTicketStorage.remove(id);
+      return Result.Ok<EventTicket, string>(ticket);
+    },
     None: () =>
       Result.Err<EventTicket, string>(
         `couldn't delete ticket with id=${id}. Profile not found.`
@@ -78,6 +95,7 @@ export function deleteEventTicket(id: string): Result<EventTicket, string> {
   });
 }
 
+// Function to fetch a TicketSold with the specified id
 $query;
 export function getTicketSoldById(id: string): Result<TicketSold, string> {
   return match(ticketSoldStorage.get(id), {
@@ -87,6 +105,7 @@ export function getTicketSoldById(id: string): Result<TicketSold, string> {
   });
 }
 
+// Function to buy and create a TicketSold for an EventTicket
 $update;
 export function buyTicket(
   id: string,
@@ -94,54 +113,61 @@ export function buyTicket(
 ): Result<TicketSold, string> {
   const eventTicket = getEventTicketById(id);
 
-  if (eventTicket.isErr()) {
-    return Result.Err<EventTicket, string>(
-      `Event ticket with id=${id} not found.`
-    );
+  // checks if EventTicket with id exists
+  if (eventTicket.Ok) {
+    const ticket = eventTicket.Ok;
+
+    const newTicket = {
+      id: uuidv4(),
+      owner: ic.caller(),
+      eventTicketId: ticket.id,
+      username: username,
+    };
+
+    // save TicketSold to storage
+    ticketSoldStorage.insert(newTicket.id, newTicket);
+
+    const updateEventTicket = {
+      ...ticket,
+      totalTicketSold: ticket.totalTicketSold + 1,
+      updatedAt: Opt.Some(ic.time()),
+    };
+    // save updated EventTicket to storage
+    eventTicketStorage.insert(updateEventTicket.id, updateEventTicket);
+
+    return Result.Ok<TicketSold, string>(newTicket);
   }
-
-  const ticket = eventTicket.unwrap();
-
-  const newTicket = {
-    id: uuidv4(),
-    eventTicketId: ticket.id,
-    username: username,
-  };
-
-  ticketSoldStorage.insert(newTicket.id, newTicket);
-
-  const updateEventTicket = {
-    ...ticket,
-    totalTicketSold: ticket.totalTicketSold + 1,
-    updatedAt: Opt.Some(ic.time()),
-  };
-
-  eventTicketStorage.insert(updateEventTicket.id, updateEventTicket);
-
-  return Result.Ok<TicketSold, string>(newTicket);
+  // return an error if TicketSold doesn't exist
+  return Result.Err<TicketSold, string>(eventTicket.Err);
 }
 
+// Function to resell a TicketSold of an EventTicket to another user
 $update;
 export function resellTIcket(
   id: string,
-  username: string
+  username: string,
+  newOwner: Principal
 ): Result<TicketSold, string> {
   const ticket = getTicketSoldById(id);
 
-  if (ticket.isErr()) {
-    return Result.Err<EventTicket, string>(
-      `ticket sold with id=${id} not found.`
-    );
+  // checks if TicketSold exists
+  if (ticket.Ok) {
+    // return an error if caller isn't the owner
+    if (ticket.Ok.owner.toString() !== ic.caller().toString()) {
+      return Result.Err<TicketSold, string>("Unauthorized caller");
+    }
+    const newTicket = {
+      ...ticket.Ok,
+      username: username,
+      owner: newOwner,
+    };
+
+    // save updated TicketSold to storage
+    ticketSoldStorage.insert(newTicket.id, newTicket);
+
+    return Result.Ok<TicketSold, string>(newTicket);
   }
-
-  const newTicket = {
-    ...ticket.unwrap(),
-    username: username,
-  };
-
-  ticketSoldStorage.insert(newTicket.id, newTicket);
-
-  return Result.Ok<TicketSold, string>(newTicket);
+  return Result.Err<TicketSold, string>(ticket.Err);
 }
 
 // a workaround to make uuid package work with Azle
